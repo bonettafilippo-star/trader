@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Market Watch — screener + notifiche Telegram + pagina statica (GitHub Pages).
+Copertura: watchlist USA + Europa, indici principali USA + Europa, e uno
+screener ampio (maggiori rialzi/ribassi/scambi) sul mercato USA.
 
 Gira su GitHub Actions (cron ogni 15 minuti). Non richiede API a pagamento:
 - Prezzi/volumi: Yahoo Finance chart API pubblica (nessuna key necessaria)
+- Screener di mercato: Yahoo Finance predefined screener pubblico
 - Notizie: Google News RSS (nessuna key necessaria)
 - Notifiche: Telegram Bot API (token + chat id da variabili d'ambiente)
 
@@ -32,9 +35,15 @@ INDICES = [
     {"symbol": "^GSPC", "name": "S&P 500"},
     {"symbol": "^IXIC", "name": "Nasdaq Composite"},
     {"symbol": "^DJI", "name": "Dow Jones"},
+    {"symbol": "^STOXX50E", "name": "Euro Stoxx 50"},
+    {"symbol": "FTSEMIB.MI", "name": "FTSE MIB"},
+    {"symbol": "^GDAXI", "name": "DAX"},
+    {"symbol": "^FCHI", "name": "CAC 40"},
+    {"symbol": "^FTSE", "name": "FTSE 100"},
 ]
 
 WATCHLIST = [
+    # --- USA ---
     {"symbol": "AAPL", "name": "Apple", "query": "Apple AAPL stock"},
     {"symbol": "MSFT", "name": "Microsoft", "query": "Microsoft MSFT stock"},
     {"symbol": "NVDA", "name": "Nvidia", "query": "Nvidia NVDA stock"},
@@ -42,7 +51,21 @@ WATCHLIST = [
     {"symbol": "AMZN", "name": "Amazon", "query": "Amazon AMZN stock"},
     {"symbol": "GOOGL", "name": "Alphabet", "query": "Alphabet GOOGL stock"},
     {"symbol": "META", "name": "Meta", "query": "Meta META stock"},
+    # --- Europa ---
+    {"symbol": "ASML.AS", "name": "ASML", "query": "ASML stock"},
+    {"symbol": "MC.PA", "name": "LVMH", "query": "LVMH stock"},
+    {"symbol": "SAP.DE", "name": "SAP", "query": "SAP stock"},
+    {"symbol": "NESN.SW", "name": "Nestlé", "query": "Nestle stock"},
+    {"symbol": "ENI.MI", "name": "Eni", "query": "Eni stock"},
+    {"symbol": "UCG.MI", "name": "UniCredit", "query": "UniCredit stock"},
 ]
+
+MARKET_MOVERS_US = [
+    {"id": "day_gainers", "label": "Maggiori rialzi (USA, screener ampio)"},
+    {"id": "day_losers", "label": "Maggiori ribassi (USA, screener ampio)"},
+    {"id": "most_actives", "label": "Più scambiati (USA, screener ampio)"},
+]
+MOVERS_PER_SCREENER = 5
 
 STOCK_FLAG_THRESHOLD = 3.0     # % variazione giornaliera per segnalare un titolo
 INDEX_FLAG_THRESHOLD = 1.5     # % variazione giornaliera per segnalare un indice
@@ -137,6 +160,29 @@ def fetch_quote(symbol):
         return None
 
 
+def fetch_market_movers(scr_id, count=5):
+    """Screener pubblico Yahoo Finance (solo mercato USA)."""
+    url = (
+        "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+        f"?formatted=false&lang=en-US&region=US&scrIds={scr_id}&count={count}"
+    )
+    try:
+        data = fetch_json(url)
+        quotes = data["finance"]["result"][0]["quotes"]
+        movers = []
+        for q in quotes:
+            movers.append({
+                "symbol": q.get("symbol"),
+                "name": q.get("shortName") or q.get("longName") or q.get("symbol"),
+                "price": q.get("regularMarketPrice"),
+                "change_pct": q.get("regularMarketChangePercent"),
+            })
+        return movers
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] screener '{scr_id}' fallito: {exc}")
+        return []
+
+
 def fetch_news(query, limit=3):
     """Notizie recenti da Google News RSS per una query testuale."""
     url = (
@@ -197,11 +243,16 @@ def collect(state):
 
     general_news = fetch_news(GENERAL_NEWS_QUERY, GENERAL_NEWS_COUNT)
 
+    movers = {}
+    for m in MARKET_MOVERS_US:
+        movers[m["label"]] = fetch_market_movers(m["id"], MOVERS_PER_SCREENER)
+
     return {
         "generated_at": now.isoformat(),
         "indices": index_rows,
         "watchlist": watch_rows,
         "general_news": general_news,
+        "movers": movers,
     }
 
 
@@ -241,7 +292,7 @@ def describe_reaction(r):
     return ", ".join(parts)
 
 
-def build_notification(data, is_market_hours):
+def build_notification(data):
     lines = []
 
     news_lines = []
@@ -270,15 +321,12 @@ def build_notification(data, is_market_hours):
             move_lines.append(f"{arrow} *{r['name']}* ({r['symbol']}): {describe_reaction(r)}")
 
     if move_lines:
-        lines.append("*Movimenti di prezzo rilevanti*")
+        lines.append("*Movimenti di prezzo rilevanti (watchlist)*")
         lines.extend(move_lines)
         lines.append("")
 
     if not lines:
         return None
-
-    if not is_market_hours:
-        lines.insert(0, "_Mercato USA chiuso — dati riferiti all'ultima sessione._\n")
 
     lines.append("_Informazione descrittiva, non un consiglio di acquisto/vendita. Verifica sempre la fonte primaria._")
     return "\n".join(lines)
@@ -333,9 +381,34 @@ def render_html(data):
           <a href="{html.escape(n['link'])}" target="_blank" rel="noopener">{html.escape(n['title'])}</a>{source}
         </div>"""
 
+    def mover_row(m):
+        cp = m.get("change_pct")
+        cls = "up" if (cp or 0) >= 0 else "down"
+        arrow = "▲" if (cp or 0) >= 0 else "▼"
+        cp_str = f"{cp:+.2f}%" if cp is not None else "n/d"
+        price_str = f"{m['price']:.2f}" if m.get("price") is not None else "n/d"
+        return f"""
+        <tr>
+          <td>{html.escape(str(m.get('name') or m.get('symbol') or ''))} ({html.escape(str(m.get('symbol') or ''))})</td>
+          <td>{price_str}</td>
+          <td class="{cls}">{arrow} {cp_str}</td>
+        </tr>"""
+
+    def movers_section(label, movers):
+        rows = "".join(mover_row(m) for m in movers) or "<tr><td colspan='3'>Dati non disponibili in questa run.</td></tr>"
+        return f"""
+        <div class="movers-block">
+          <h3>{html.escape(label)}</h3>
+          <table>
+            <thead><tr><th>Titolo</th><th>Prezzo</th><th>Var.</th></tr></thead>
+            <tbody>{rows}</tbody>
+          </table>
+        </div>"""
+
     indices_html = "".join(index_card(r) for r in data["indices"]) or "<p>Dati indici non disponibili in questa run.</p>"
     watch_html = "".join(watch_row(r) for r in data["watchlist"]) or "<tr><td colspan='4'>Dati non disponibili in questa run.</td></tr>"
     news_html = "".join(news_item(n) for n in data["general_news"]) or "<p>Nessuna notizia recuperata in questa run.</p>"
+    movers_html = "".join(movers_section(label, movers) for label, movers in data["movers"].items()) or "<p>Screener non disponibile in questa run.</p>"
 
     return f"""<!DOCTYPE html>
 <html lang="it">
@@ -381,12 +454,14 @@ def render_html(data):
   .news-item a:hover {{ text-decoration: underline; }}
   .tag {{ display: inline-block; font-size: 10.5px; font-weight: 600; color: #995c00; background: #fff3e0; border-radius: 5px; padding: 1px 6px; margin-left: 6px; }}
   .disclaimer {{ margin-top: 32px; padding: 14px 16px; background: #f0f0ee; border-radius: 10px; font-size: 12px; color: #555; line-height: 1.5; }}
+  .movers-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }}
+  .movers-block h3 {{ font-size: 13px; margin: 0 0 8px 0; color: #333; }}
 </style>
 </head>
 <body>
   <div class="header">
     <div>
-      <h1>Market Watch — Indici &amp; Big Cap USA</h1>
+      <h1>Market Watch — USA &amp; Europa</h1>
       <div class="sub">Ultimo aggiornamento: {generated_at_str} · rigenerata ogni 15 minuti via GitHub Actions</div>
     </div>
     <div class="badge">Dati da ricerca pubblica, non un feed in tempo reale. Non è consulenza finanziaria.</div>
@@ -395,17 +470,20 @@ def render_html(data):
   <div class="section-title">Indici principali</div>
   <div class="indices">{indices_html}</div>
 
-  <div class="section-title">Watchlist big cap</div>
+  <div class="section-title">Watchlist big cap (USA + Europa)</div>
   <table>
     <thead><tr><th>Titolo</th><th>Prezzo</th><th>Var. giornaliera</th><th>Segnali</th></tr></thead>
     <tbody>{watch_html}</tbody>
   </table>
 
+  <div class="section-title">Screener ampio (USA)</div>
+  <div class="movers-grid">{movers_html}</div>
+
   <div class="section-title">Notizie di mercato</div>
   <div class="news-list">{news_html}</div>
 
   <div class="disclaimer">
-    <strong>Nota:</strong> pagina generata automaticamente da uno script che interroga fonti pubbliche gratuite (Yahoo Finance, Google News). Le "segnalazioni" descrivono variazioni di prezzo superiori a {STOCK_FLAG_THRESHOLD:.1f}% (titoli) / {INDEX_FLAG_THRESHOLD:.1f}% (indici) e nuovi annunci/notizie rilevati, insieme alla reazione osservabile del mercato (prezzo, volumi). Sono informazioni descrittive per la tua ricerca personale, non raccomandazioni di acquisto/vendita né consulenza finanziaria. Verifica sempre su una fonte primaria prima di decidere ed esegui sempre tu stesso qualsiasi operazione.
+    <strong>Nota:</strong> pagina generata automaticamente da fonti pubbliche gratuite (Yahoo Finance, Google News). Lo "screener ampio" copre solo il mercato USA (non esiste un equivalente gratuito affidabile per l'Europa): per l'Europa il monitoraggio è sui titoli e indici elencati sopra. Le segnalazioni sono informazioni descrittive per la tua ricerca personale, non raccomandazioni di acquisto/vendita né consulenza finanziaria. Verifica sempre su una fonte primaria prima di decidere ed esegui sempre tu stesso qualsiasi operazione.
   </div>
 </body>
 </html>"""
@@ -414,12 +492,6 @@ def render_html(data):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
-def is_us_market_hours(now_utc):
-    if now_utc.weekday() >= 5:
-        return False
-    return 13 <= now_utc.hour < 21
-
 
 def main():
     state = load_state()
@@ -430,8 +502,7 @@ def main():
         f.write(render_html(data))
     print(f"[info] pagina scritta in {OUTPUT_HTML}")
 
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    notification = build_notification(data, is_us_market_hours(now_utc))
+    notification = build_notification(data)
     if notification:
         send_telegram(notification)
     else:
