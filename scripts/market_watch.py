@@ -2,14 +2,18 @@
 """
 Market Watch — screener + notifiche Telegram + pagina statica (GitHub Pages).
 
-Gira su GitHub Actions (cron orario). Non richiede API a pagamento:
-- Prezzi: Yahoo Finance chart API pubblica (nessuna key necessaria)
+Gira su GitHub Actions (cron ogni 15 minuti). Non richiede API a pagamento:
+- Prezzi/volumi: Yahoo Finance chart API pubblica (nessuna key necessaria)
 - Notizie: Google News RSS (nessuna key necessaria)
 - Notifiche: Telegram Bot API (token + chat id da variabili d'ambiente)
 
 Variabili d'ambiente richieste (impostale come GitHub Actions secrets):
   TELEGRAM_BOT_TOKEN
   TELEGRAM_CHAT_ID
+
+Questo script NON dà consigli di acquisto/vendita. Descrive solo la reazione
+osservabile del mercato (variazione di prezzo, volumi scambiati rispetto alla
+media) quando trova un annuncio/notizia nuova su un titolo della watchlist.
 """
 
 import os
@@ -40,9 +44,11 @@ WATCHLIST = [
     {"symbol": "META", "name": "Meta", "query": "Meta META stock"},
 ]
 
-STOCK_FLAG_THRESHOLD = 3.0   # % di variazione giornaliera per segnalare un titolo
-INDEX_FLAG_THRESHOLD = 1.5   # % di variazione giornaliera per segnalare un indice
-NEWS_PER_TICKER = 2
+STOCK_FLAG_THRESHOLD = 3.0     # % variazione giornaliera per segnalare un titolo
+INDEX_FLAG_THRESHOLD = 1.5     # % variazione giornaliera per segnalare un indice
+VOLUME_RATIO_NOTABLE = 1.5     # volumi >= 1.5x la media = attività di trading elevata
+NEWS_PER_TICKER = 3
+MAX_SEEN_LINKS_PER_SYMBOL = 40
 GENERAL_NEWS_QUERY = "stock market news today"
 GENERAL_NEWS_COUNT = 5
 
@@ -51,8 +57,29 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MarketWatchBot/1.0)"}
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-DOCS_DIR = os.path.join(os.path.dirname(__file__), "..", "docs")
+BASE_DIR = os.path.join(os.path.dirname(__file__), "..")
+DOCS_DIR = os.path.join(BASE_DIR, "docs")
 OUTPUT_HTML = os.path.join(DOCS_DIR, "index.html")
+STATE_DIR = os.path.join(BASE_DIR, "state")
+STATE_PATH = os.path.join(STATE_DIR, "seen_news.json")
+
+
+# ---------------------------------------------------------------------------
+# Stato (per non notificare due volte la stessa notizia)
+# ---------------------------------------------------------------------------
+
+def load_state():
+    try:
+        with open(STATE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"seen_links": {}}
+
+
+def save_state(state):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +92,28 @@ def fetch_json(url):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def compute_volume_ratio(result):
+    """Volume di oggi rispetto alla media dei giorni precedenti nella stessa risposta."""
+    try:
+        quote = result["indicators"]["quote"][0]
+        volumes = [v for v in (quote.get("volume") or []) if v is not None]
+        if len(volumes) < 2:
+            return None
+        today = volumes[-1]
+        prior = volumes[:-1]
+        avg_prior = sum(prior) / len(prior)
+        if not avg_prior:
+            return None
+        return today / avg_prior
+    except Exception:
+        return None
+
+
 def fetch_quote(symbol):
-    """Ritorna dict con prezzo corrente, chiusura precedente e variazione %."""
+    """Ritorna dict con prezzo corrente, variazione % e rapporto sui volumi."""
     url = (
         "https://query1.finance.yahoo.com/v8/finance/chart/"
-        f"{urllib.parse.quote(symbol)}?interval=1d&range=5d"
+        f"{urllib.parse.quote(symbol)}?interval=1d&range=6d"
     )
     try:
         data = fetch_json(url)
@@ -86,7 +130,7 @@ def fetch_quote(symbol):
             "prev_close": prev_close,
             "change_pct": change_pct,
             "currency": meta.get("currency", "USD"),
-            "market_state": meta.get("marketState", "UNKNOWN"),
+            "volume_ratio": compute_volume_ratio(result),
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[warn] quote fallita per {symbol}: {exc}")
@@ -117,11 +161,12 @@ def fetch_news(query, limit=3):
 
 
 # ---------------------------------------------------------------------------
-# Valutazione segnalazioni
+# Raccolta + individuazione novità
 # ---------------------------------------------------------------------------
 
-def collect():
+def collect(state):
     now = datetime.datetime.now(datetime.timezone.utc)
+    seen_links = state.setdefault("seen_links", {})
 
     index_rows = []
     for idx in INDICES:
@@ -138,7 +183,16 @@ def collect():
             continue
         q["name"] = w["name"]
         q["flag"] = abs(q["change_pct"]) >= STOCK_FLAG_THRESHOLD
-        q["news"] = fetch_news(w["query"], NEWS_PER_TICKER)
+
+        news = fetch_news(w["query"], NEWS_PER_TICKER)
+        already_seen = set(seen_links.get(w["symbol"], []))
+        for n in news:
+            n["is_new"] = n["link"] not in already_seen
+        q["news"] = news
+
+        updated = list(dict.fromkeys(list(already_seen) + [n["link"] for n in news]))
+        seen_links[w["symbol"]] = updated[-MAX_SEEN_LINKS_PER_SYMBOL:]
+
         watch_rows.append(q)
 
     general_news = fetch_news(GENERAL_NEWS_QUERY, GENERAL_NEWS_COUNT)
@@ -175,24 +229,58 @@ def send_telegram(text):
         print(f"[warn] invio Telegram fallito: {exc}")
 
 
-def build_notification(data):
-    flagged_indices = [r for r in data["indices"] if r["flag"]]
-    flagged_stocks = [r for r in data["watchlist"] if r["flag"]]
+def describe_reaction(r):
+    """Descrizione neutra della reazione del mercato — mai un consiglio."""
+    parts = [f"{r['change_pct']:+.2f}% da inizio giornata"]
+    vr = r.get("volume_ratio")
+    if vr is not None:
+        if vr >= VOLUME_RATIO_NOTABLE:
+            parts.append(f"volumi ~{vr:.1f}x la media (attività di trading elevata)")
+        else:
+            parts.append(f"volumi ~{vr:.1f}x la media")
+    return ", ".join(parts)
 
-    if not flagged_indices and not flagged_stocks:
-        return None  # niente di rilevante, non notificare
 
-    lines = ["*Market Watch — segnalazioni*", ""]
-    for r in flagged_indices:
-        arrow = "\U0001F53A" if r["change_pct"] >= 0 else "\U0001F53B"
-        lines.append(f"{arrow} *{r['name']}*: {r['price']:.2f} ({r['change_pct']:+.2f}%)")
-    for r in flagged_stocks:
-        arrow = "\U0001F53A" if r["change_pct"] >= 0 else "\U0001F53B"
-        lines.append(f"{arrow} *{r['name']}* ({r['symbol']}): {r['price']:.2f} {r['currency']} ({r['change_pct']:+.2f}%)")
-        if r["news"]:
-            lines.append(f"   ↳ {r['news'][0]['title']}")
-    lines.append("")
-    lines.append("_Non è consulenza finanziaria. Verifica sempre su una fonte primaria._")
+def build_notification(data, is_market_hours):
+    lines = []
+
+    news_lines = []
+    for r in data["watchlist"]:
+        new_items = [n for n in r["news"] if n["is_new"]]
+        if not new_items:
+            continue
+        news_lines.append(f"📰 *{r['name']}* ({r['symbol']})")
+        news_lines.append(f"   {new_items[0]['title']}")
+        news_lines.append(f"   Reazione: {describe_reaction(r)}")
+        news_lines.append(f"   {new_items[0]['link']}")
+
+    if news_lines:
+        lines.append("*Nuovi annunci rilevati*")
+        lines.extend(news_lines)
+        lines.append("")
+
+    move_lines = []
+    for r in data["indices"]:
+        if r["flag"]:
+            arrow = "🔺" if r["change_pct"] >= 0 else "🔻"
+            move_lines.append(f"{arrow} *{r['name']}*: {r['price']:.2f} ({r['change_pct']:+.2f}%)")
+    for r in data["watchlist"]:
+        if r["flag"]:
+            arrow = "🔺" if r["change_pct"] >= 0 else "🔻"
+            move_lines.append(f"{arrow} *{r['name']}* ({r['symbol']}): {describe_reaction(r)}")
+
+    if move_lines:
+        lines.append("*Movimenti di prezzo rilevanti*")
+        lines.extend(move_lines)
+        lines.append("")
+
+    if not lines:
+        return None
+
+    if not is_market_hours:
+        lines.insert(0, "_Mercato USA chiuso — dati riferiti all'ultima sessione._\n")
+
+    lines.append("_Informazione descrittiva, non un consiglio di acquisto/vendita. Verifica sempre la fonte primaria._")
     return "\n".join(lines)
 
 
@@ -217,17 +305,25 @@ def render_html(data):
     def watch_row(r):
         cls = "up" if r["change_pct"] >= 0 else "down"
         arrow = "▲" if r["change_pct"] >= 0 else "▼"
-        flag_html = '<span class="flag warn">Movimento rilevante</span>' if r["flag"] else "—"
+        flags = []
+        if r["flag"]:
+            flags.append('<span class="flag warn">Movimento rilevante</span>')
+        if any(n["is_new"] for n in r["news"]):
+            flags.append('<span class="flag new">Nuovo annuncio</span>')
+        flag_html = "".join(flags) or "—"
+        vr = r.get("volume_ratio")
+        vol_html = f'<div class="mini-news">Volumi: {vr:.1f}x media</div>' if vr is not None else ""
         news_html = ""
         if r["news"]:
             n = r["news"][0]
-            news_html = f'<div class="mini-news"><a href="{html.escape(n["link"])}" target="_blank" rel="noopener">{html.escape(n["title"])}</a></div>'
+            badge = ' <span class="tag">nuovo</span>' if n["is_new"] else ""
+            news_html = f'<div class="mini-news"><a href="{html.escape(n["link"])}" target="_blank" rel="noopener">{html.escape(n["title"])}</a>{badge}</div>'
         return f"""
         <tr>
           <td>{html.escape(r['name'])} ({r['symbol']})</td>
           <td>{r['price']:.2f} {html.escape(r['currency'])}</td>
           <td class="{cls}">{arrow} {r['change_pct']:+.2f}%</td>
-          <td>{flag_html}{news_html}</td>
+          <td>{flag_html}{vol_html}{news_html}</td>
         </tr>"""
 
     def news_item(n):
@@ -246,7 +342,7 @@ def render_html(data):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="refresh" content="900">
+<meta http-equiv="refresh" content="300">
 <title>Market Watch Dashboard</title>
 <style>
   :root {{ color-scheme: light; }}
@@ -274,8 +370,9 @@ def render_html(data):
   th, td {{ text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #eeeeec; vertical-align: top; }}
   th {{ background: #fafaf9; color: #666; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }}
   tr:last-child td {{ border-bottom: none; }}
-  .flag {{ display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }}
+  .flag {{ display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; margin-right: 4px; }}
   .flag.warn {{ background: #fdecea; color: #c22626; }}
+  .flag.new {{ background: #e8f0fe; color: #1a56db; }}
   .mini-news {{ margin-top: 4px; font-size: 12px; }}
   .mini-news a {{ color: #555; }}
   .news-list {{ display: flex; flex-direction: column; gap: 10px; }}
@@ -290,7 +387,7 @@ def render_html(data):
   <div class="header">
     <div>
       <h1>Market Watch — Indici &amp; Big Cap USA</h1>
-      <div class="sub">Ultimo aggiornamento: {generated_at_str} · rigenerata ogni ora via GitHub Actions</div>
+      <div class="sub">Ultimo aggiornamento: {generated_at_str} · rigenerata ogni 15 minuti via GitHub Actions</div>
     </div>
     <div class="badge">Dati da ricerca pubblica, non un feed in tempo reale. Non è consulenza finanziaria.</div>
   </div>
@@ -308,7 +405,7 @@ def render_html(data):
   <div class="news-list">{news_html}</div>
 
   <div class="disclaimer">
-    <strong>Nota:</strong> pagina generata automaticamente da uno script che interroga fonti pubbliche gratuite (Yahoo Finance, Google News). Le "segnalazioni" evidenziano variazioni superiori a {STOCK_FLAG_THRESHOLD:.1f}% (titoli) o {INDEX_FLAG_THRESHOLD:.1f}% (indici): sono spunti di ricerca personale, non raccomandazioni di acquisto/vendita né consulenza finanziaria. Verifica sempre su una fonte primaria prima di decidere ed esegui sempre tu stesso qualsiasi operazione.
+    <strong>Nota:</strong> pagina generata automaticamente da uno script che interroga fonti pubbliche gratuite (Yahoo Finance, Google News). Le "segnalazioni" descrivono variazioni di prezzo superiori a {STOCK_FLAG_THRESHOLD:.1f}% (titoli) / {INDEX_FLAG_THRESHOLD:.1f}% (indici) e nuovi annunci/notizie rilevati, insieme alla reazione osservabile del mercato (prezzo, volumi). Sono informazioni descrittive per la tua ricerca personale, non raccomandazioni di acquisto/vendita né consulenza finanziaria. Verifica sempre su una fonte primaria prima di decidere ed esegui sempre tu stesso qualsiasi operazione.
   </div>
 </body>
 </html>"""
@@ -318,19 +415,29 @@ def render_html(data):
 # Main
 # ---------------------------------------------------------------------------
 
+def is_us_market_hours(now_utc):
+    if now_utc.weekday() >= 5:
+        return False
+    return 13 <= now_utc.hour < 21
+
+
 def main():
-    data = collect()
+    state = load_state()
+    data = collect(state)
 
     os.makedirs(DOCS_DIR, exist_ok=True)
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(render_html(data))
     print(f"[info] pagina scritta in {OUTPUT_HTML}")
 
-    notification = build_notification(data)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    notification = build_notification(data, is_us_market_hours(now_utc))
     if notification:
         send_telegram(notification)
     else:
         print("[info] nessuna segnalazione in questa run, nessuna notifica inviata.")
+
+    save_state(state)
 
 
 if __name__ == "__main__":
