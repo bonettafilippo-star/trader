@@ -3,16 +3,141 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="900">
 <title>Market Watch Dashboard</title>
 <style>
   :root { color-scheme: light; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#f7f7f5; color:#1a1a1a; padding:40px; text-align:center; }
-  h1 { font-size: 20px; }
-  p { color:#666; font-size: 14px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f7f7f5;
+    color: #1a1a1a;
+    padding: 24px;
+  }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .header h1 { font-size: 22px; margin: 0 0 4px 0; }
+  .header .sub { color: #666; font-size: 13px; }
+  .badge { background: #fff3e0; color: #995c00; border: 1px solid #f0c98a; border-radius: 6px; padding: 6px 10px; font-size: 12px; max-width: 320px; }
+  .section-title { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; margin: 28px 0 10px 0; }
+  .indices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .card { background: #fff; border: 1px solid #e5e5e3; border-radius: 10px; padding: 14px 16px; }
+  .card .name { font-size: 13px; color: #666; margin-bottom: 4px; }
+  .card .value { font-size: 20px; font-weight: 600; }
+  .change { font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .up { color: #0a7d32; }
+  .down { color: #c22626; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e5e3; border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #eeeeec; vertical-align: top; }
+  th { background: #fafaf9; color: #666; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+  .flag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+  .flag.warn { background: #fdecea; color: #c22626; }
+  .mini-news { margin-top: 4px; font-size: 12px; }
+  .mini-news a { color: #555; }
+  .news-list { display: flex; flex-direction: column; gap: 10px; }
+  .news-item { background: #fff; border: 1px solid #e5e5e3; border-radius: 10px; padding: 12px 16px; font-size: 13.5px; line-height: 1.5; }
+  .news-item a { color: #1a1a1a; text-decoration: none; }
+  .news-item a:hover { text-decoration: underline; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 600; color: #995c00; background: #fff3e0; border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+  .disclaimer { margin-top: 32px; padding: 14px 16px; background: #f0f0ee; border-radius: 10px; font-size: 12px; color: #555; line-height: 1.5; }
 </style>
 </head>
 <body>
-  <h1>Market Watch</h1>
-  <p>In attesa del primo aggiornamento automatico.<br>Lancia il workflow "Market Watch" dalla tab Actions per generare subito la dashboard.</p>
+  <div class="header">
+    <div>
+      <h1>Market Watch — Indici &amp; Big Cap USA</h1>
+      <div class="sub">Ultimo aggiornamento: 01/08/2026 22:46 UTC · rigenerata ogni ora via GitHub Actions</div>
+    </div>
+    <div class="badge">Dati da ricerca pubblica, non un feed in tempo reale. Non è consulenza finanziaria.</div>
+  </div>
+
+  <div class="section-title">Indici principali</div>
+  <div class="indices">
+        <div class="card">
+          <div class="name">S&amp;P 500</div>
+          <div class="value">7489.72</div>
+          <div class="change up">▲ +1.05%</div>
+        </div>
+        <div class="card">
+          <div class="name">Nasdaq Composite</div>
+          <div class="value">25373.85</div>
+          <div class="change up">▲ +1.59%</div>
+        </div>
+        <div class="card">
+          <div class="name">Dow Jones</div>
+          <div class="value">52485.03</div>
+          <div class="change up">▲ +1.04%</div>
+        </div></div>
+
+  <div class="section-title">Watchlist big cap</div>
+  <table>
+    <thead><tr><th>Titolo</th><th>Prezzo</th><th>Var. giornaliera</th><th>Segnali</th></tr></thead>
+    <tbody>
+        <tr>
+          <td>Apple (AAPL)</td>
+          <td>308.91 USD</td>
+          <td class="down">▼ -7.24%</td>
+          <td><span class="flag warn">Movimento rilevante</span><div class="mini-news"><a href="https://news.google.com/rss/articles/CBMidkFVX3lxTE9zV0dwMk5CZUI3Rm0wMExxOE5udVIyZjFicmNzeFpfUlpXSk1mOFo5VnZLY2pNNjdKSWtZbWdSMXpzZ1NZTXN0dkhhNG42S0tELXdrUEdueTJvQmhpVWd0bXoxTEI2STFHRlJHMDRZMFlrNWpmQlE?oc=5" target="_blank" rel="noopener">Apple Inc Ripartizione dei ricavi – NASDAQ:AAPL - TradingView</a></div></td>
+        </tr>
+        <tr>
+          <td>Microsoft (MSFT)</td>
+          <td>464.72 USD</td>
+          <td class="up">▲ +21.75%</td>
+          <td><span class="flag warn">Movimento rilevante</span><div class="mini-news"><a href="https://news.google.com/rss/articles/CBMitAFBVV95cUxOYjhQU2Vwb1JsQTFtalVURVlYclU3WHY2QjJvbVUzdDZwc3NaVTNJODBMOUNTUndMUEZDY0RrSW4xdkJwMUN0Q1FwaHJ3R0dzWGVZaW5HMS1MRWJ3YmZxV0djM0VNN2FSRWpJVnJ6WkNtX2EwaHpXek1NTkNUMDdueTJqeUpkTWV1LXE4YUU1ckZZdjRkSHpOZ0RiTjM3aXVmdmY4dFptdXFTMWFGaVVjUHBMeDc?oc=5" target="_blank" rel="noopener">Microsoft Stock Jumps as Azure Revenue Tops $100 Billion - TradingView</a></div></td>
+        </tr>
+        <tr>
+          <td>Nvidia (NVDA)</td>
+          <td>200.75 USD</td>
+          <td class="down">▼ -2.94%</td>
+          <td>—<div class="mini-news"><a href="https://news.google.com/rss/articles/CBMirgFBVV95cUxPa09kUzNpYUZsa0c1SlR3WGpzWnpNRTdLRllPY3U3SjZhdWxQWjJRRnFrOUZOejN4M082UUdZaDlDal84dE5UUFI0Znh0NmkzZnA1dE92TkdpSG5sb1hPMlNteXhoTzA1WHE4emNQUFNUb1MyY09DZkU3RUhXRWZfLXl2cmZldmcyaEQxNWcwbjQ3bFpQd3h0UnpRYzNiWmpJeDZYa2prTWRMTS1lbUE?oc=5" target="_blank" rel="noopener">TD Cowen Names Nvidia Stock a Top Pick on Massive Unpriced AI Upside - TIKR.com</a></div></td>
+        </tr>
+        <tr>
+          <td>Tesla (TSLA)</td>
+          <td>311.21 USD</td>
+          <td class="down">▼ -0.58%</td>
+          <td>—<div class="mini-news"><a href="https://news.google.com/rss/articles/CBMibkFVX3lxTE02bkxVeF9icC1mU29paEdXZWg2MUZNZllZb2ZJLUJzaENVdnNQZDJFYkhsZWRpdldINjd5S0ZESzNnSmNzM0hzeVlkXzJHTE5ZanQwdnJUZFFvOVZuUUF3ZDFiU2J0OXdObmRwSW5B?oc=5" target="_blank" rel="noopener">Tesla (Dinari Tokenized Stock) (TSLA) Prezzo, capitalizzazione di mercato, grafici e informazioni sui fondamentali - BeInCrypto</a></div></td>
+        </tr>
+        <tr>
+          <td>Amazon (AMZN)</td>
+          <td>271.58 USD</td>
+          <td class="up">▲ +17.00%</td>
+          <td><span class="flag warn">Movimento rilevante</span><div class="mini-news"><a href="https://news.google.com/rss/articles/CBMidkFVX3lxTE9HamV6ZGxwVXZGblAxOFFKVEpPTXlnUGxWQWI1T3BDWkwyR0hIdVppZ01CckxBV3BCTXVwUUttazVVdDEyNmVjVWkxRzRkMDgwcXNTdEQxWDBnTUdjZlg5UDFjQ2VGS0ROUy0xb2VvRHpUUmlUWXc?oc=5" target="_blank" rel="noopener">Amazon.com, Inc. Ripartizione dei ricavi – NASDAQ:AMZN - TradingView</a></div></td>
+        </tr>
+        <tr>
+          <td>Alphabet (GOOGL)</td>
+          <td>356.13 USD</td>
+          <td class="up">▲ +11.38%</td>
+          <td><span class="flag warn">Movimento rilevante</span><div class="mini-news"><a href="https://news.google.com/rss/articles/CBMickFVX3lxTE4tNVlLWDA4MGZVOUh2M0NXT1A0SGtHV0pmWHhVWlNOSjg4N2xXVXdZU3haYXdrbklVMWt4QmJpeXY4QnlrWGhtSXAxNmN4Q1A5R1g3Z1Rfb0l6aG56WWwyVW4zQnZfcEhnZDBNNEFxLWE5Zw?oc=5" target="_blank" rel="noopener">Alphabet (Dinari Tokenized Stock) (GOOGL) Prezzo, capitalizzazione di mercato, grafici e informazioni sui fondamentali - BeInCrypto</a></div></td>
+        </tr>
+        <tr>
+          <td>Meta (META)</td>
+          <td>556.71 USD</td>
+          <td class="down">▼ -6.47%</td>
+          <td><span class="flag warn">Movimento rilevante</span><div class="mini-news"><a href="https://news.google.com/rss/articles/CBMirwFBVV95cUxPLWZNT2NJVTJJYVRKdTNUbFZoMDNDX3loX01SR214SnFfcVZ1OFA2clp2eGQxeG5YSzBqaF9wRkhldEc4Ym9uRWprSGFuQnpLLUo5dW5Sd0o3UTdCdExSNzhCWTNobWJaVlhicXRJYWhVMllzWDdocngxcUNpR0VsMDNGLUJVdWdPcEo0ajRVUVdyQm9CUnVnczlZV1FpRFhtcUw2VGdjODhHeGlLNWtz?oc=5" target="_blank" rel="noopener">Meta Stock Slips as Options Price 7.8% Earnings Move - TradingView</a></div></td>
+        </tr></tbody>
+  </table>
+
+  <div class="section-title">Notizie di mercato</div>
+  <div class="news-list">
+        <div class="news-item">
+          <a href="https://news.google.com/rss/articles/CBMi5AFBVV95cUxNdUFfTU9rdnp5VDY5RFV1eXozczBtMEtlVXVOZ1VaMk1UQ2J1dEd5bXNhWUxYeE9FbFJEczN5dmoyYy1keVh0Rl9NamFSaGN2c0RHYWJyenRCTGdYd3JlaURYS3g1OEpPc2Z3QnZLQklMejRWSWNISWF2UTJmaEtScE5FZ0drNk9kclBMWnFXNHpiSWdiRnowSVQ0QkU4ZkROOGJ6aVI4dk11NDQxNUltUzVHV2dNbHVDSkNYZmtGUERsd21KTkJrMUdROUVtWEZrQXZjanRZdlZnbWIyZUQtZ0VuejM?oc=5" target="_blank" rel="noopener">Stock markets: tech stocks stage a comeback. Milan up 1.3 per cent, buoyed by a surge in ST shares and quarterly results. Wall Street up 1.2 per cent - Il Sole 24 ORE</a> <span class="tag">Il Sole 24 ORE</span>
+        </div>
+        <div class="news-item">
+          <a href="https://news.google.com/rss/articles/CBMi5AFBVV95cUxNUjQ4RVhWZ3I5dC1mRE5VbmNBLWk0V1ZvYUtBVERGMEY4Qk1QM251YVhCY3NOZzNDckNuSFhKR2xyb3hsem5BdDM4YlBwdk5keDZ0TGZxazhrdXJuTW80bnhtUURyY2Fna2FqU3NKU2Jfa1hmZGVkN0lqaFJ6X3RUSjRhQ3pEM1lXbjgyQXlSUG41TS0ycXRwM2pOalc4cGUxYThqZjNfb1FRZW54Vkt0U2txbV9Va0xFVHVHNVdONk5tRTRjc3FiNWNFYWRrUEY4SGVVV0Zka3ppTEFZN1k3cmduVlA?oc=5" target="_blank" rel="noopener">Nifty 50, Sensex prediction today: Check how Indian stock market is expected to trade on 31 July - TradingView</a> <span class="tag">TradingView</span>
+        </div>
+        <div class="news-item">
+          <a href="https://news.google.com/rss/articles/CBMiuwFBVV95cUxPOE95b1lEM3pOb2ZBYS1FQUxibWpucXlqQUUyYXBhWmp0NEVkRXZUOEgwMUJOZ05FWlZIZU9KMm5IOUpySW5PcGtxV3RlNHpHdkl6ajNsaWlsek9uMW5oQTRrRENOQ1VVelEzcWY0Y3JmT2JkcVdFbXRNVDJpOXdTQm95bDFzcXJKeUVfNF9lNThORU8wNDdFQjd1cDRzbzlNZnotclpIVlJ5OXBZZktILTRjZ1pGeWowWFZV?oc=5" target="_blank" rel="noopener">Stock markets: Seoul sends fresh shockwaves through the tech sector; Wall Street sees volatility, Milan down 0.7% - Il Sole 24 ORE</a> <span class="tag">Il Sole 24 ORE</span>
+        </div>
+        <div class="news-item">
+          <a href="https://news.google.com/rss/articles/CBMigwJBVV95cUxPWXVOMFJQYm9haFNwd0pkWTgtT2ZIZThDRWF0ZHg3MEJOaWdrV1dKN3NXMDgxb2tiTE1wR1NKVEloaXQ0X203NWEwV2VyempFbzZQVjBkYWxXVnNHUmUzQnJtMTlkLUNiQ1ZQanM0VFBjQXlkNUZoTlNNYVl2b1BMWWQybjVib2haVFVOSWVPNUpUQUZCaWNjR1YtQ2hsZ1NwdVdxaDM3Nzk2LWlWWGxpTGhULUJZNGFzZXRQSFFzTTZvYlJRc1NLNWEtZExrZl9kajdiWWxWNWdKbmVMS0FLOEVwZ3YtOUtSTl9tdGtDVGtLNlgzc1hWaThaX3hyc3hYZVdj?oc=5" target="_blank" rel="noopener">Stock Market Today, July 30: Europe Seesaws Between Rising Oil and Quarterly Results: Stellantis Collapses in Milan, Campari Soars - LIVE - firstonline.info</a> <span class="tag">firstonline.info</span>
+        </div>
+        <div class="news-item">
+          <a href="https://news.google.com/rss/articles/CBMiuwFBVV95cUxQd1c3SGphVHUwejJ5d05GYmg3LTdJMzFfM2V4UTZkNTlxSXpna2FGc3k5aUs2TlV4bHYxQVE3RDViSTNhM3hrR3JxQ2xDVE9JOXJWa0swTkNzcHF4UEtrVzNFclgwd1RRc2JnYmNwY2VlS1lhR1lyUm9hZnZXUVVqVzhwTF84bU04ekQxb00xQi1RN0FGUlpyZkdxWWhzTk94ZGlqS29uM0VyTjhLRUdRTGxRRlo0VFp0ZUNr?oc=5" target="_blank" rel="noopener">Tesla sotto pressione ribassista con RSI ipervenduto: Live - Investing.com</a> <span class="tag">Investing.com</span>
+        </div></div>
+
+  <div class="disclaimer">
+    <strong>Nota:</strong> pagina generata automaticamente da uno script che interroga fonti pubbliche gratuite (Yahoo Finance, Google News). Le "segnalazioni" evidenziano variazioni superiori a 3.0% (titoli) o 1.5% (indici): sono spunti di ricerca personale, non raccomandazioni di acquisto/vendita né consulenza finanziaria. Verifica sempre su una fonte primaria prima di decidere ed esegui sempre tu stesso qualsiasi operazione.
+  </div>
 </body>
 </html>
