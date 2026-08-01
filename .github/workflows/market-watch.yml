@@ -2,9 +2,8 @@ name: Market Watch
 
 on:
   schedule:
-    # Ogni ora, minuto 5. Orario UTC (GitHub Actions non usa il fuso locale).
-    - cron: "5 * * * *"
-  workflow_dispatch: {}   # permette di lanciarlo manualmente da GitHub (tab Actions -> Run workflow)
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -31,6 +30,6 @@ jobs:
         run: |
           git config user.name "market-watch-bot"
           git config user.email "actions@github.com"
-          git add docs/index.html
+          git add docs/index.html state/seen_news.json
           git diff --quiet --cached || git commit -m "Aggiorna dashboard [skip ci]"
           git push
